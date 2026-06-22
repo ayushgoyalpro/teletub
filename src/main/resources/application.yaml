@@ -1,3 +1,11 @@
 spring:
   application:
     name: teletub
+
+server:
+  port: 7001
+
+logging:
+  level:
+    com.ayush.teletub: DEBUG
+    com.microsoft.playwright: WARN
