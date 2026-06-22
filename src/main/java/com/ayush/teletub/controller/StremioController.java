@@ -3,6 +3,7 @@ package com.ayush.teletub.controller;
 import com.ayush.teletub.model.*;
 import com.ayush.teletub.service.ChannelService;
 import com.ayush.teletub.service.ScheduleService;
+import com.ayush.teletub.service.PlayerUrlService;
 import com.ayush.teletub.service.StreamResolverService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class StremioController {
     private final ChannelService channelService;
     private final ScheduleService scheduleService;
     private final StreamResolverService streamResolver;
+    private final PlayerUrlService playerUrlService;
 
     // ── Manifest ─────────────────────────────────────────────────────────────
 
@@ -213,6 +215,26 @@ public class StremioController {
         }
 
         return StreamResponse.builder().streams(streams).build();
+    }
+
+    // ── Player URL resolver (bypasses dlhd wrapper, returns daddy.php URL) ──
+
+    @GetMapping("/data/player-url/{watchId}")
+    public ResponseEntity<java.util.Map<String, String>> playerUrl(@PathVariable int watchId) {
+        String url = playerUrlService.resolvePlayerUrl(watchId);
+        return corsOk(java.util.Map.of("url", url));
+    }
+
+    // ── Raw data endpoints (for the SPA — no stream resolution) ─────────────
+
+    @GetMapping("/data/channels")
+    public ResponseEntity<List<Channel>> dataChannels() throws Exception {
+        return corsOk(channelService.getChannels());
+    }
+
+    @GetMapping("/data/schedule")
+    public ResponseEntity<List<ScheduleEvent>> dataSchedule() throws Exception {
+        return corsOk(scheduleService.getSchedule());
     }
 
     private <T> ResponseEntity<T> corsOk(T body) {

@@ -16,11 +16,11 @@ public class CacheConfig {
 
     @Bean
     public CacheManager cacheManager() {
-        CaffeineCacheManager manager = new CaffeineCacheManager("channels");
-        manager.setCacheNames(List.of("channels", "schedule"));
+        CaffeineCacheManager manager = new CaffeineCacheManager();
+        manager.setCacheNames(List.of("channels", "schedule", "playerUrls"));
         manager.setCaffeine(Caffeine.newBuilder()
-                .expireAfterWrite(10, TimeUnit.MINUTES)
-                .maximumSize(10));
+                .expireAfterWrite(30, TimeUnit.MINUTES)
+                .maximumSize(500));
         return manager;
     }
 }
