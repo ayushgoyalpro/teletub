@@ -1,9 +1,13 @@
 services:
   teletub:
     build: .
-    ports:
-      - "7001:7001"
     restart: unless-stopped
     environment:
       - JAVA_OPTS=-Xmx512m
     shm_size: 256mb
+    networks:
+      - omni
+
+networks:
+  omni:
+    external: true
