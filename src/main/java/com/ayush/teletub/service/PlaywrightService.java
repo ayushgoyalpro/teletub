@@ -33,7 +33,8 @@ public class PlaywrightService {
                         "--no-sandbox",
                         "--disable-setuid-sandbox",
                         "--disable-dev-shm-usage",
-                        "--disable-gpu"
+                        "--disable-gpu",
+                        "--disable-blink-features=AutomationControlled"
                 )));
 
         for (int i = 0; i < POOL_SIZE; i++) {
@@ -43,10 +44,18 @@ public class PlaywrightService {
     }
 
     private BrowserContext createContext() {
-        return browser.newContext(new Browser.NewContextOptions()
+        BrowserContext ctx = browser.newContext(new Browser.NewContextOptions()
                 .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
                               "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
-                .setIgnoreHTTPSErrors(true));
+                .setIgnoreHTTPSErrors(true)
+                .setViewportSize(1280, 720)
+                .setExtraHTTPHeaders(java.util.Map.of(
+                        "Accept-Language", "en-US,en;q=0.9",
+                        "Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+                )));
+        // Patch navigator.webdriver so headless mode isn't detected via JS
+        ctx.addInitScript("Object.defineProperty(navigator, 'webdriver', { get: () => undefined });");
+        return ctx;
     }
 
     /**

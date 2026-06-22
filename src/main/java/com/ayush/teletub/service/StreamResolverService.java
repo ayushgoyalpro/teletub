@@ -6,10 +6,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
-
 @Slf4j
 @Service
 @RequiredArgsConstructor
@@ -18,63 +14,52 @@ public class StreamResolverService {
     private static final String DLHD_BASE = "https://dlhd.pk";
     private static final int RESOLVE_TIMEOUT_MS = 40_000;
 
-    // Player path prefixes, tried in order. watch.php?id=N always maps to stream-N.php.
     private static final String[] PLAYER_PATHS = {
             "/stream/stream-%d.php",
             "/cast/stream-%d.php",
             "/watch/stream-%d.php",
     };
 
+    // Served locally as the parent page so the stream loads inside an iframe.
+    // The stream page sees WRAPPER_ORIGIN as Referer and window !== window.top.
+    private static final String WRAPPER_ORIGIN = "https://www.iframetester.com";
+    private static final String WRAPPER_URL    = WRAPPER_ORIGIN + "/?url=";
+
     private final PlaywrightService playwright;
 
-    /**
-     * Navigates directly to the stream player page for the given watchId,
-     * intercepts the first .m3u8 network request, and returns the URL.
-     *
-     * watch.php?id=N and stream-N.php always share the same numeric ID,
-     * so we skip watch.php entirely.
-     */
     public String resolveM3u8(int watchId) throws Exception {
         for (String pathTemplate : PLAYER_PATHS) {
             String playerUrl = DLHD_BASE + String.format(pathTemplate, watchId);
             try {
-                String m3u8 = tryResolve(playerUrl, watchId);
-                if (m3u8 != null) return m3u8;
-            } catch (TimeoutException e) {
-                log.warn("Timeout on {}, trying next player", playerUrl);
+                return tryResolve(playerUrl);
             } catch (Exception e) {
-                log.warn("Error on {}: {}", playerUrl, e.getMessage());
+                log.warn("Failed on {}: {}", playerUrl, e.getMessage());
             }
         }
-        throw new RuntimeException("Could not resolve m3u8 for watchId=" + watchId + " after trying all players");
+        throw new RuntimeException("Could not resolve m3u8 for watchId=" + watchId);
     }
 
-    private String tryResolve(String playerUrl, int watchId) throws Exception {
-        log.info("Resolving m3u8: {}", playerUrl);
+    private String tryResolve(String playerUrl) throws Exception {
+        log.info("Resolving m3u8 via iframe wrapper: {}", playerUrl);
         return playwright.withContext(ctx -> {
-            CompletableFuture<String> m3u8Future = new CompletableFuture<>();
-
             try (Page page = ctx.newPage()) {
-                page.onRequest(req -> {
-                    String url = req.url();
-                    if (url.contains(".m3u8") && !m3u8Future.isDone()) {
-                        log.info("Captured m3u8: {}", url);
-                        m3u8Future.complete(url);
-                    }
-                });
-                page.onResponse(resp -> {
-                    String url = resp.url();
-                    if (url.contains(".m3u8") && !m3u8Future.isDone()) {
-                        log.info("Captured m3u8 from response: {}", url);
-                        m3u8Future.complete(url);
-                    }
-                });
+                page.route(WRAPPER_URL + "**", route -> route.fulfill(new Route.FulfillOptions()
+                        .setStatus(200)
+                        .setContentType("text/html")
+                        .setBody("<!DOCTYPE html><html><body style='margin:0'>" +
+                                "<iframe src=\"" + playerUrl + "\" width='100%' height='100%' " +
+                                "style='border:none' allowfullscreen allow='autoplay'></iframe>" +
+                                "</body></html>")));
 
-                page.navigate(playerUrl, new Page.NavigateOptions()
-                        .setTimeout(RESOLVE_TIMEOUT_MS)
-                        .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
+                Request m3u8 = page.waitForRequest(
+                        req -> req.url().contains(".m3u8"),
+                        new Page.WaitForRequestOptions().setTimeout(RESOLVE_TIMEOUT_MS),
+                        () -> page.navigate(WRAPPER_URL + playerUrl, new Page.NavigateOptions()
+                                .setTimeout(RESOLVE_TIMEOUT_MS)
+                                .setWaitUntil(WaitUntilState.COMMIT)));
 
-                return m3u8Future.get(RESOLVE_TIMEOUT_MS, TimeUnit.MILLISECONDS);
+                log.info("Captured m3u8: {}", m3u8.url());
+                return m3u8.url();
             }
         });
     }
