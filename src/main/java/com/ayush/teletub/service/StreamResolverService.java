@@ -16,7 +16,7 @@ import java.util.concurrent.TimeoutException;
 public class StreamResolverService {
 
     private static final String DLHD_BASE = "https://dlhd.pk";
-    private static final int RESOLVE_TIMEOUT_MS = 25_000;
+    private static final int RESOLVE_TIMEOUT_MS = 40_000;
 
     // Player path prefixes, tried in order. watch.php?id=N always maps to stream-N.php.
     private static final String[] PLAYER_PATHS = {
