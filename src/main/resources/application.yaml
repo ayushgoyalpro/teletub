@@ -3,7 +3,7 @@ spring:
     name: teletub
 
 server:
-  port: 7001
+  port: 7002
 
 logging:
   level:

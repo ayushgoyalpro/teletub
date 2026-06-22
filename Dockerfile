@@ -8,5 +8,5 @@ RUN mvn package -DskipTests -q
 FROM mcr.microsoft.com/playwright/java:v1.52.0-noble
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
-EXPOSE 7001
+EXPOSE 7002
 ENTRYPOINT ["java", "-jar", "app.jar"]
