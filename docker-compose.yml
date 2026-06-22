@@ -11,3 +11,4 @@ services:
 networks:
   omni:
     external: true
+    name: omni-stack_omni
