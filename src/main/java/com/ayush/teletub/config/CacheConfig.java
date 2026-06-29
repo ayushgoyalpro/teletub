@@ -6,12 +6,14 @@ import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 @Configuration
 @EnableCaching
+@EnableScheduling
 public class CacheConfig {
 
     @Bean
@@ -19,7 +21,7 @@ public class CacheConfig {
         CaffeineCacheManager manager = new CaffeineCacheManager("channels");
         manager.setCacheNames(List.of("channels", "schedule"));
         manager.setCaffeine(Caffeine.newBuilder()
-                .expireAfterWrite(10, TimeUnit.MINUTES)
+                .expireAfterWrite(15, TimeUnit.MINUTES)
                 .maximumSize(10));
         return manager;
     }

@@ -3,9 +3,10 @@ package com.ayush.teletub.service;
 import com.ayush.teletub.model.ScheduleEvent;
 import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.WaitUntilState;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -16,13 +17,18 @@ import java.util.regex.Pattern;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ScheduleService {
 
     private static final String SCHEDULE_URL = "https://dlhd.pk/";
     private static final Pattern WATCH_ID = Pattern.compile("[?&]id=(\\d+)");
 
     private final PlaywrightService playwright;
+
+    @Lazy @Autowired ScheduleService self;
+
+    public ScheduleService(PlaywrightService playwright) {
+        this.playwright = playwright;
+    }
 
     @Cacheable(value = "schedule", unless = "#result.isEmpty()")
     public List<ScheduleEvent> getSchedule() throws Exception {
@@ -31,7 +37,7 @@ public class ScheduleService {
     }
 
     public ScheduleEvent findById(String id) throws Exception {
-        return getSchedule().stream()
+        return self.getSchedule().stream()
                 .filter(e -> e.getId().equals(id))
                 .findFirst()
                 .orElse(null);

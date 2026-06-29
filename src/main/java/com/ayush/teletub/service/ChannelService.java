@@ -34,7 +34,7 @@ public class ChannelService {
     @Cacheable(value = "channels", unless = "#result.isEmpty()")
     public List<Channel> getChannels() throws Exception {
         log.info("Scraping 24/7 channel list from {}", CHANNELS_URL);
-        return playwright.withContext(ctx -> scrapeChannels(ctx));
+        return playwright.withContext(this::scrapeChannels);
     }
 
     private List<Channel> scrapeChannels(BrowserContext ctx) {
