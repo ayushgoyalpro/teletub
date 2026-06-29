@@ -14,8 +14,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Slf4j
 @RestController
@@ -26,9 +29,17 @@ public class StreamProxyController {
     private static final String DLHD_BASE = "https://dlhd.pk";
     private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-    private static final long CACHE_TTL_MS = 20 * 60 * 1000L;
 
-    private record CachedM3u8(String url, long resolvedAt) {}
+    // How early to consider a cached URL stale and re-resolve (5 min before CDN expiry)
+    private static final long EXPIRY_BUFFER_MS = 5 * 60 * 1000L;
+    // Fallback TTL when the URL has no expires= param
+    private static final long FALLBACK_TTL_MS  = 50 * 60 * 1000L;
+
+    private static final Pattern EXPIRES_PARAM = Pattern.compile("[?&]expires=(\\d+)");
+    private static final Pattern URI_ATTR       = Pattern.compile("URI=\"([^\"]+)\"");
+
+    // expiresAtMs: wall-clock ms when the CDN URL expires (already buffered by EXPIRY_BUFFER_MS)
+    private record CachedM3u8(String url, long expiresAtMs) {}
 
     private final StreamResolverService streamResolver;
     private final ConcurrentHashMap<Integer, CachedM3u8> m3u8Cache = new ConcurrentHashMap<>();
@@ -50,6 +61,10 @@ public class StreamProxyController {
             resp = fetch(m3u8Url, referer);
         }
 
+        long expiresAtSec = m3u8Cache.containsKey(watchId)
+                ? (m3u8Cache.get(watchId).expiresAtMs() + EXPIRY_BUFFER_MS) / 1000
+                : (System.currentTimeMillis() + FALLBACK_TTL_MS) / 1000;
+
         String manifest = new String(resp.body(), StandardCharsets.UTF_8);
         String rewritten = rewriteManifest(manifest, m3u8Url, watchId);
 
@@ -57,7 +72,22 @@ public class StreamProxyController {
                 .header(HttpHeaders.CONTENT_TYPE, "application/vnd.apple.mpegurl")
                 .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                 .header(HttpHeaders.CACHE_CONTROL, "no-cache")
+                .header("X-Stream-Expires", String.valueOf(expiresAtSec))
                 .body(rewritten.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @GetMapping("/stream/info/{watchId}")
+    public ResponseEntity<Map<String, Long>> info(@PathVariable int watchId) throws Exception {
+        String url = resolveWithCache(watchId);
+
+        Matcher m = EXPIRES_PARAM.matcher(url);
+        long expiresAtSec = m.find()
+                ? Long.parseLong(m.group(1))
+                : (System.currentTimeMillis() + FALLBACK_TTL_MS) / 1000;
+
+        return ResponseEntity.ok()
+                .header(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                .body(Map.of("expiresAt", expiresAtSec));
     }
 
     @GetMapping("/stream/segment")
@@ -98,7 +128,7 @@ public class StreamProxyController {
 
     private String resolveWithCache(int watchId) throws Exception {
         CachedM3u8 cached = m3u8Cache.get(watchId);
-        if (cached != null && System.currentTimeMillis() - cached.resolvedAt() < CACHE_TTL_MS) {
+        if (cached != null && System.currentTimeMillis() < cached.expiresAtMs()) {
             return cached.url();
         }
 
@@ -108,7 +138,7 @@ public class StreamProxyController {
                     try {
                         log.info("Resolving m3u8 for watchId={}", id);
                         String url = streamResolver.resolveM3u8(id);
-                        m3u8Cache.put(id, new CachedM3u8(url, System.currentTimeMillis()));
+                        m3u8Cache.put(id, new CachedM3u8(url, expiresAtMs(url)));
                         return url;
                     } catch (Exception e) {
                         throw new RuntimeException(e);
@@ -121,6 +151,16 @@ public class StreamProxyController {
         return future.get();
     }
 
+    // Parse expires= from URL, apply buffer, fall back to FALLBACK_TTL if absent
+    private long expiresAtMs(String url) {
+        Matcher m = EXPIRES_PARAM.matcher(url);
+        if (m.find()) {
+            long cdnExpiryMs = Long.parseLong(m.group(1)) * 1000L;
+            return cdnExpiryMs - EXPIRY_BUFFER_MS;
+        }
+        return System.currentTimeMillis() + FALLBACK_TTL_MS;
+    }
+
     private HttpResponse<byte[]> fetch(String url, String referer) throws Exception {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -131,9 +171,6 @@ public class StreamProxyController {
         return httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray());
     }
 
-    private static final java.util.regex.Pattern URI_ATTR =
-            java.util.regex.Pattern.compile("URI=\"([^\"]+)\"");
-
     private String rewriteManifest(String manifest, String baseUrl, int watchId) {
         URI base = URI.create(baseUrl);
         StringBuilder sb = new StringBuilder();
@@ -143,11 +180,10 @@ public class StreamProxyController {
             if (trimmed.isEmpty()) {
                 sb.append(line).append("\n");
             } else if (trimmed.startsWith("#")) {
-                // Rewrite URI="..." attributes inside tags like #EXT-X-MEDIA and #EXT-X-MAP
                 sb.append(rewriteUriAttributes(line, base, watchId)).append("\n");
             } else {
                 String absolute = trimmed.startsWith("http") ? trimmed : base.resolve(trimmed).toString();
-                String encoded = URLEncoder.encode(absolute, StandardCharsets.UTF_8);
+                String encoded  = URLEncoder.encode(absolute, StandardCharsets.UTF_8);
                 sb.append("/stream/segment?url=").append(encoded)
                   .append("&watchId=").append(watchId).append("\n");
             }
@@ -157,14 +193,14 @@ public class StreamProxyController {
     }
 
     private String rewriteUriAttributes(String line, URI base, int watchId) {
-        java.util.regex.Matcher m = URI_ATTR.matcher(line);
+        Matcher m = URI_ATTR.matcher(line);
         if (!m.find()) return line;
         StringBuffer sb = new StringBuffer();
         do {
             String original = m.group(1);
             String absolute = original.startsWith("http") ? original : base.resolve(original).toString();
-            String encoded = URLEncoder.encode(absolute, StandardCharsets.UTF_8);
-            String proxy = "/stream/segment?url=" + encoded + "&watchId=" + watchId;
+            String encoded  = URLEncoder.encode(absolute, StandardCharsets.UTF_8);
+            String proxy    = "/stream/segment?url=" + encoded + "&watchId=" + watchId;
             m.appendReplacement(sb, "URI=\"" + proxy + "\"");
         } while (m.find());
         m.appendTail(sb);
