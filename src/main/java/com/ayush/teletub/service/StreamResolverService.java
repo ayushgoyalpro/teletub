@@ -18,6 +18,9 @@ public class StreamResolverService {
             "/stream/stream-%d.php",
             "/cast/stream-%d.php",
             "/watch/stream-%d.php",
+            "/plus/stream-%d.php",
+            "/casting/stream-%d.php",
+            "/player/stream-%d.php"
     };
 
     // Served locally as the parent page so the stream loads inside an iframe.
