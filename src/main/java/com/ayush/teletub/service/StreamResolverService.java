@@ -54,12 +54,19 @@ public class StreamResolverService {
                                 "style='border:none' allowfullscreen allow='autoplay'></iframe>" +
                                 "</body></html>")));
 
-                Request m3u8 = page.waitForRequest(
-                        req -> req.url().contains(".m3u8"),
-                        new Page.WaitForRequestOptions().setTimeout(RESOLVE_TIMEOUT_MS),
+                Response m3u8 = page.waitForResponse(
+                        resp -> resp.url().contains(".m3u8"),
+                        new Page.WaitForResponseOptions().setTimeout(RESOLVE_TIMEOUT_MS),
                         () -> page.navigate(WRAPPER_URL + playerUrl, new Page.NavigateOptions()
                                 .setTimeout(RESOLVE_TIMEOUT_MS)
                                 .setWaitUntil(WaitUntilState.COMMIT)));
+
+                String body = m3u8.text();
+                if (!body.startsWith("#EXTM3U")) {
+                    log.warn("URL {} returned invalid content: {}", m3u8.url(),
+                            body.substring(0, Math.min(120, body.length())));
+                    throw new RuntimeException("Invalid m3u8 content from " + m3u8.url());
+                }
 
                 log.info("Captured m3u8: {}", m3u8.url());
                 return m3u8.url();
