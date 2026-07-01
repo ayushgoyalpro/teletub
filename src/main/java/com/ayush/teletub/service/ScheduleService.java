@@ -19,10 +19,12 @@ import java.util.regex.Pattern;
 @Service
 public class ScheduleService {
 
-    private static final String SCHEDULE_URL = "https://dlhd.pk/";
     private static final Pattern WATCH_ID = Pattern.compile("[?&]id=(\\d+)");
 
     private final PlaywrightService playwright;
+
+    @org.springframework.beans.factory.annotation.Value("${dlhd.base-url}")
+    private String dlhdBase;
 
     @Lazy @Autowired ScheduleService self;
 
@@ -32,8 +34,9 @@ public class ScheduleService {
 
     @Cacheable(value = "schedule", unless = "#result.isEmpty()")
     public List<ScheduleEvent> getSchedule() throws Exception {
-        log.info("Scraping sports schedule from {}", SCHEDULE_URL);
-        return playwright.withContext(this::scrapeSchedule);
+        String scheduleUrl = dlhdBase + "/";
+        log.info("Scraping sports schedule from {}", scheduleUrl);
+        return playwright.withContext(ctx -> scrapeSchedule(ctx, scheduleUrl));
     }
 
     public ScheduleEvent findById(String id) throws Exception {
@@ -43,11 +46,11 @@ public class ScheduleService {
                 .orElse(null);
     }
 
-    private List<ScheduleEvent> scrapeSchedule(BrowserContext ctx) {
+    private List<ScheduleEvent> scrapeSchedule(BrowserContext ctx, String scheduleUrl) {
         List<ScheduleEvent> events = new ArrayList<>();
 
         try (Page page = ctx.newPage()) {
-            page.navigate(SCHEDULE_URL, new Page.NavigateOptions()
+            page.navigate(scheduleUrl, new Page.NavigateOptions()
                     .setTimeout(30_000)
                     .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
 

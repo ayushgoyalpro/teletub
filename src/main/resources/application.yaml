@@ -9,3 +9,7 @@ logging:
   level:
     com.ayush.teletub: DEBUG
     com.microsoft.playwright: WARN
+
+dlhd:
+  base-url: https://dlhd.st
+  wrapper-origin: https://www.iframetester.com

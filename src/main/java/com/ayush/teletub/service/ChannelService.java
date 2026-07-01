@@ -18,11 +18,12 @@ import java.util.regex.Pattern;
 @Service
 public class ChannelService {
 
-    private static final String CHANNELS_URL = "https://dlhd.pk/24-7-channels.php";
-    // Matches href="/watch.php?id=51" or href="https://dlhd.pk/watch.php?id=51"
     private static final Pattern WATCH_ID = Pattern.compile("[?&]id=(\\d+)");
 
     private final PlaywrightService playwright;
+
+    @org.springframework.beans.factory.annotation.Value("${dlhd.base-url}")
+    private String dlhdBase;
 
     // Self-reference so findById goes through the proxy and hits the cache
     @Lazy @Autowired ChannelService self;
@@ -33,15 +34,16 @@ public class ChannelService {
 
     @Cacheable(value = "channels", unless = "#result.isEmpty()")
     public List<Channel> getChannels() throws Exception {
-        log.info("Scraping 24/7 channel list from {}", CHANNELS_URL);
-        return playwright.withContext(this::scrapeChannels);
+        String channelsUrl = dlhdBase + "/24-7-channels.php";
+        log.info("Scraping 24/7 channel list from {}", channelsUrl);
+        return playwright.withContext(ctx -> scrapeChannels(ctx, channelsUrl));
     }
 
-    private List<Channel> scrapeChannels(BrowserContext ctx) {
+    private List<Channel> scrapeChannels(BrowserContext ctx, String channelsUrl) {
         List<Channel> channels = new ArrayList<>();
 
         try (Page page = ctx.newPage()) {
-            page.navigate(CHANNELS_URL, new Page.NavigateOptions()
+            page.navigate(channelsUrl, new Page.NavigateOptions()
                     .setTimeout(30_000)
                     .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
 

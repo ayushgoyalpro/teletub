@@ -4,6 +4,7 @@ import com.microsoft.playwright.*;
 import com.microsoft.playwright.options.WaitUntilState;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -11,7 +12,6 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class StreamResolverService {
 
-    private static final String DLHD_BASE = "https://dlhd.pk";
     private static final int RESOLVE_TIMEOUT_MS = 40_000;
 
     private static final String[] PLAYER_PATHS = {
@@ -23,16 +23,17 @@ public class StreamResolverService {
             "/player/stream-%d.php"
     };
 
-    // Served locally as the parent page so the stream loads inside an iframe.
-    // The stream page sees WRAPPER_ORIGIN as Referer and window !== window.top.
-    private static final String WRAPPER_ORIGIN = "https://www.iframetester.com";
-    private static final String WRAPPER_URL    = WRAPPER_ORIGIN + "/?url=";
-
     private final PlaywrightService playwright;
+
+    @Value("${dlhd.base-url}")
+    private String dlhdBase;
+
+    @Value("${dlhd.wrapper-origin}")
+    private String wrapperOrigin;
 
     public String resolveM3u8(int watchId) throws Exception {
         for (String pathTemplate : PLAYER_PATHS) {
-            String playerUrl = DLHD_BASE + String.format(pathTemplate, watchId);
+            String playerUrl = dlhdBase + String.format(pathTemplate, watchId);
             try {
                 return tryResolve(playerUrl);
             } catch (Exception e) {
@@ -46,7 +47,8 @@ public class StreamResolverService {
         log.info("Resolving m3u8 via iframe wrapper: {}", playerUrl);
         return playwright.withContext(ctx -> {
             try (Page page = ctx.newPage()) {
-                page.route(WRAPPER_URL + "**", route -> route.fulfill(new Route.FulfillOptions()
+                String wrapperUrl = wrapperOrigin + "/?url=";
+                page.route(wrapperUrl + "**", route -> route.fulfill(new Route.FulfillOptions()
                         .setStatus(200)
                         .setContentType("text/html")
                         .setBody("<!DOCTYPE html><html><body style='margin:0'>" +
@@ -57,7 +59,7 @@ public class StreamResolverService {
                 Response m3u8 = page.waitForResponse(
                         resp -> resp.url().contains(".m3u8"),
                         new Page.WaitForResponseOptions().setTimeout(RESOLVE_TIMEOUT_MS),
-                        () -> page.navigate(WRAPPER_URL + playerUrl, new Page.NavigateOptions()
+                        () -> page.navigate(wrapperUrl + playerUrl, new Page.NavigateOptions()
                                 .setTimeout(RESOLVE_TIMEOUT_MS)
                                 .setWaitUntil(WaitUntilState.COMMIT)));
 

@@ -20,13 +20,17 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.springframework.beans.factory.annotation.Value;
+
 @Slf4j
 @RestController
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class StreamProxyController {
 
-    private static final String DLHD_BASE = "https://dlhd.pk";
+    @Value("${dlhd.base-url}")
+    private String dlhdBase;
+
     private static final String UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
@@ -51,7 +55,7 @@ public class StreamProxyController {
     @GetMapping("/stream/manifest/{watchId}")
     public ResponseEntity<byte[]> manifest(@PathVariable int watchId) throws Exception {
         String m3u8Url = resolveWithCache(watchId);
-        String referer = DLHD_BASE + "/stream/stream-" + watchId + ".php";
+        String referer = dlhdBase + "/stream/stream-" + watchId + ".php";
 
         HttpResponse<byte[]> resp = fetch(m3u8Url, referer);
 
@@ -96,7 +100,7 @@ public class StreamProxyController {
             @RequestParam int watchId) throws Exception {
 
         String decoded = URLDecoder.decode(url, StandardCharsets.UTF_8);
-        String referer = DLHD_BASE + "/stream/stream-" + watchId + ".php";
+        String referer = dlhdBase + "/stream/stream-" + watchId + ".php";
 
         HttpResponse<byte[]> resp = fetch(decoded, referer);
 
@@ -165,7 +169,7 @@ public class StreamProxyController {
         HttpRequest req = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .header("Referer", referer)
-                .header("Origin", DLHD_BASE)
+                .header("Origin", dlhdBase)
                 .header("User-Agent", UA)
                 .build();
         return httpClient.send(req, HttpResponse.BodyHandlers.ofByteArray());
